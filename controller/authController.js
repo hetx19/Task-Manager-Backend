@@ -4,8 +4,10 @@ const User = require("../model/User");
 const Task = require("../model/Task");
 const cloudinary = require("../config/cloudinary");
 
-const generateToken = (userId) => {
-  return jwt.sign({ _id: userId }, process.env.JWT_SECRET, { expiresIn: "7d" });
+const generateToken = (userId, userRole) => {
+  return jwt.sign({ _id: userId, role: userRole }, process.env.JWT_SECRET, {
+    expiresIn: "7d",
+  });
 };
 
 const signUpUser = async (req, res) => {
@@ -44,7 +46,7 @@ const signUpUser = async (req, res) => {
       email: user.email,
       profileImageUrl: user.profileImageUrl,
       role: user.role,
-      token: generateToken(user._id),
+      token: generateToken(user._id, user.role),
     });
   } catch (error) {
     return res
@@ -82,7 +84,7 @@ const signInUser = async (req, res) => {
       email: user.email,
       profileImageUrl: user.profileImageUrl,
       role: user.role,
-      token: generateToken(user._id),
+      token: generateToken(user._id, user.role),
     });
   } catch (error) {
     return res
@@ -150,7 +152,7 @@ const updateUserProfile = async (req, res) => {
       email: updatedUser.email,
       profileImageUrl: updatedUser.profileImageUrl,
       role: updatedUser.role,
-      token: generateToken(updatedUser._id),
+      token: generateToken(updatedUser._id, updatedUser.role),
     });
   } catch (error) {
     return res

@@ -14,7 +14,7 @@ const protect = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    req.user = { _id: decoded._id };
+    req.user = { _id: decoded._id, role: decoded.role };
     next();
   } catch (error) {
     if (error.name === "TokenExpiredError") {
@@ -35,7 +35,7 @@ const adminOnly = (req, res, next) => {
   if (req.user && req.user.role === "admin") {
     next();
   } else {
-    res.status(403).json({ message: "Access denied, Only for admin" });
+    return res.status(403).json({ message: "Access denied, Only for admin" });
   }
 };
 
