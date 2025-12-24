@@ -321,6 +321,117 @@ describe("GET /api/task/user-dashboard", () => {
   });
 });
 
+describe("GET /api/task/:id", () => {
+  beforeEach(async () => {
+    await Task.deleteMany({});
+  });
+
+  it("should return 401 if token is missing", async () => {
+    const res = await request(app).get("/api/task/123456789012");
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe(
+      "Not authorized, token missing or token is invalid"
+    );
+  });
+
+  it("should return 401 if token does not start with Bearer", async () => {
+    const res = await request(app)
+      .get("/api/task/123456789012")
+      .set("Authorization", "InvalidToken");
+
+    expect(res.status).toBe(401);
+  });
+
+  it("should return 401 if token is expired", async () => {
+    const expiredToken = jwt.sign(
+      { _id: userId, role: "user" },
+      process.env.JWT_SECRET,
+      { expiresIn: "1ms" }
+    );
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    const res = await request(app)
+      .get("/api/task/123456789012")
+      .set("Authorization", `Bearer ${expiredToken}`);
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe("Token expired. Please log in again.");
+  });
+
+  it("should return 403 if token is invalid", async () => {
+    const invalidToken = token + "INVALID";
+
+    const res = await request(app)
+      .get("/api/task/123456789012")
+      .set("Authorization", `Bearer ${invalidToken}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.message).toBe("Invalid token. Please log in again.");
+  });
+
+  it("should return 404 for invalid ObjectId", async () => {
+    const res = await authRequest("get", "/api/task/invalidTaskId", token);
+
+    expect(res.status).toBe(404);
+    expect(res.body.message).toBe("Task not found");
+  });
+
+  it("should return 404 if task does not exist", async () => {
+    const id = new mongoose.Types.ObjectId();
+
+    const res = await authRequest("get", `/api/task/${id}`, token);
+
+    expect(res.status).toBe(404);
+    expect(res.body.message).toBe("Task not found");
+  });
+
+  it("should return task successfully", async () => {
+    const task = await createTask({
+      title: "Fetch Me",
+      description: "Task details",
+    });
+
+    const res = await authRequest("get", `/api/task/${task._id}`, token);
+
+    expect(res.status).toBe(200);
+    expect(res.body.task).toHaveProperty("_id", task._id.toString());
+    expect(res.body.task.title).toBe("Fetch Me");
+  });
+
+  it("should populate assignedTo with name, email, profileImageUrl", async () => {
+    const task = await createTask();
+
+    const res = await authRequest("get", `/api/task/${task._id}`, token);
+
+    expect(res.status).toBe(200);
+    expect(res.body.task.assignedTo.length).toBeGreaterThan(0);
+
+    const assignedUser = res.body.task.assignedTo[0];
+    expect(assignedUser).toHaveProperty("name");
+    expect(assignedUser).toHaveProperty("email");
+    expect(assignedUser).toHaveProperty("profileImageUrl");
+    expect(assignedUser).not.toHaveProperty("password");
+  });
+
+  it("should return 500 if database error occurs", async () => {
+    jest.spyOn(Task, "findById").mockImplementationOnce(() => {
+      throw new Error("DB Failure");
+    });
+
+    const id = new mongoose.Types.ObjectId();
+
+    const res = await authRequest("get", `/api/task/${id}`, token);
+
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe("Server error");
+    expect(res.body.error).toBe("DB Failure");
+
+    Task.findById.mockRestore();
+  });
+});
+
 describe("GET /api/task", () => {
   beforeEach(async () => await Task.deleteMany({}));
 
@@ -329,6 +440,63 @@ describe("GET /api/task", () => {
     const res = await authRequest("get", "/api/task", token);
     expect(res.status).toBe(200);
     expect(res.body.tasks.length).toBeGreaterThan(0);
+  });
+
+  it("should filter tasks by status when status query is provided", async () => {
+    await createTask({ status: "Pending" });
+    await createTask({ status: "Completed" });
+
+    const res = await authRequest("get", "/api/task?status=Pending", token);
+
+    expect(res.status).toBe(200);
+    expect(res.body.tasks.length).toBe(1);
+    expect(res.body.tasks[0].status).toBe("Pending");
+  });
+
+  it("should return only assigned tasks for normal user", async () => {
+    await createTask({ assignedTo: [userId] });
+    await createTask({ assignedTo: [adminId] });
+
+    const res = await authRequest("get", "/api/task", token);
+
+    expect(res.status).toBe(200);
+    expect(res.body.tasks.length).toBe(1);
+  });
+
+  it("should populate assignedTo with name, email, profileImageUrl for admin", async () => {
+    const task = await createTask({
+      assignedTo: [userId],
+    });
+
+    const res = await authRequest("get", "/api/task", adminToken);
+
+    expect(res.status).toBe(200);
+    expect(res.body.tasks.length).toBeGreaterThan(0);
+
+    const populatedUser = res.body.tasks[0].assignedTo[0];
+
+    expect(populatedUser).toHaveProperty("_id", userId.toString());
+    expect(populatedUser).toHaveProperty("name");
+    expect(populatedUser).toHaveProperty("email");
+    expect(populatedUser).toHaveProperty("profileImageUrl");
+
+    expect(populatedUser).not.toHaveProperty("password");
+    expect(populatedUser).not.toHaveProperty("__v");
+  });
+
+  it("should add completedTaskCount correctly for each task", async () => {
+    await createTask({
+      todoCheckList: [
+        { text: "A", completed: true },
+        { text: "B", completed: false },
+        { text: "C", completed: true },
+      ],
+    });
+
+    const res = await authRequest("get", "/api/task", token);
+
+    expect(res.status).toBe(200);
+    expect(res.body.tasks[0]).toHaveProperty("completedTaskCount", 2);
   });
 
   it("should return 403 for unauthorized user", async () => {
@@ -370,30 +538,136 @@ describe("POST /api/task", () => {
     expect(res.status).toBe(400);
     expect(res.body.message).toBe("assignedTo must be an array of user IDs");
   });
+
+  it("should return 500 if an error occurs in getAllTasks (catch block)", async () => {
+    jest.spyOn(Task, "find").mockImplementationOnce(() => {
+      throw new Error("GetAllTasks failure");
+    });
+
+    const res = await authRequest("get", "/api/task", token);
+
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe("Server error");
+    expect(res.body.error).toBe("GetAllTasks failure");
+
+    jest.restoreAllMocks();
+  });
 });
 
 describe("PUT /api/task/:id", () => {
-  beforeEach(async () => await Task.deleteMany({}));
-
-  it("should update task successfully", async () => {
-    const task = await createTask({ title: "Task to Update" });
-    const res = await authRequest("put", `/api/task/${task._id}`, adminToken, {
-      title: "Updated Task Title",
-      description: "Updated description",
-    });
-    expect(res.status).toBe(200);
-    expect(res.body.message).toBe("Task updated successfully");
-    expect(res.body.task).toHaveProperty("title", "Updated Task Title");
+  beforeEach(async () => {
+    await Task.deleteMany({});
   });
 
-  it("should return 404 if task not found", async () => {
+  it("should return 401 if token is missing", async () => {
+    const res = await request(app).put("/api/task/123456789012");
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe(
+      "Not authorized, token missing or token is invalid"
+    );
+  });
+
+  it("should return 401 if token does not start with Bearer", async () => {
+    const res = await request(app)
+      .put("/api/task/123456789012")
+      .set("Authorization", "InvalidToken");
+
+    expect(res.status).toBe(401);
+  });
+
+  it("should return 401 if token is expired", async () => {
+    const expiredToken = jwt.sign(
+      { _id: userId, role: "user" },
+      process.env.JWT_SECRET,
+      { expiresIn: "1ms" }
+    );
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    const res = await request(app)
+      .put("/api/task/123456789012")
+      .set("Authorization", `Bearer ${expiredToken}`);
+
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe("Token expired. Please log in again.");
+  });
+
+  it("should return 403 if token is invalid", async () => {
+    const invalidToken = token + "INVALID";
+
+    const res = await request(app)
+      .put("/api/task/123456789012")
+      .set("Authorization", `Bearer ${invalidToken}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.message).toBe("Invalid token. Please log in again.");
+  });
+
+  it("should return 404 for invalid ObjectId", async () => {
     const res = await authRequest(
       "put",
       "/api/task/invalidTaskId",
       adminToken,
-      { title: "Non-Existing Task" }
+      { title: "Update Attempt" }
     );
+
     expect(res.status).toBe(404);
+    expect(res.body.message).toBe("Task not found");
+  });
+
+  it("should return 404 if task does not exist", async () => {
+    const id = new mongoose.Types.ObjectId();
+
+    const res = await authRequest("put", `/api/task/${id}`, adminToken, {
+      title: "Non-existing Task",
+    });
+
+    expect(res.status).toBe(404);
+    expect(res.body.message).toBe("Task not found");
+  });
+
+  it("should update task successfully", async () => {
+    const task = await createTask({ title: "Original Title" });
+
+    const res = await authRequest("put", `/api/task/${task._id}`, adminToken, {
+      title: "Updated Title",
+      description: "Updated Description",
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.message).toBe("Task updated successfully");
+    expect(res.body.task.title).toBe("Updated Title");
+    expect(res.body.task.description).toBe("Updated Description");
+  });
+
+  it("should persist updated data in database", async () => {
+    const task = await createTask({ title: "Before Update" });
+
+    await authRequest("put", `/api/task/${task._id}`, adminToken, {
+      title: "After Update",
+    });
+
+    const updatedTask = await Task.findById(task._id);
+    expect(updatedTask.title).toBe("After Update");
+  });
+
+  it("should return 500 if database error occurs", async () => {
+    jest
+      .spyOn(Task, "findById")
+      .mockRejectedValueOnce(new Error("Database failure"));
+
+    const id = new mongoose.Types.ObjectId();
+
+    const res = await authRequest("put", `/api/task/${id}`, adminToken, {
+      title: "Fail Update",
+    });
+
+    expect(res.status).toBe(500);
+    expect(res.body.message).toBe("Server error");
+    expect(res.body.error).toBe("Database failure");
+
+    Task.findById.mockRestore();
   });
 });
 
