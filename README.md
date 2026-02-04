@@ -34,7 +34,7 @@ Before you begin, ensure you have met the following requirements:
 
 1.  Clone the repository:
     ```sh
-    git clone <your-repository-url>
+    git clone https://github.com/hetx19/Task-Manager-Backend.git
     ```
 2.  Navigate to the project directory:
     ```sh
