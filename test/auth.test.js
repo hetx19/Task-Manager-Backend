@@ -58,6 +58,25 @@ describe("POST /api/auth/signup", () => {
     expect(res.body).toHaveProperty("token");
   });
 
+  it("should return 400 if name, email, or password is missing", async () => {
+    const cases = [
+      { name: "", email: "user@example.com", password: "pass123" },
+      { name: "User", email: "", password: "pass123" },
+      { name: "User", email: "user@example.com", password: "" },
+      { name: "", email: "", password: "pass123" },
+      { name: "", email: "user@example.com", password: "" },
+      { name: "User", email: "", password: "" },
+      { name: "", email: "", password: "" },
+    ];
+
+    for (const body of cases) {
+      const res = await request(app).post("/api/auth/signup").send(body);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body.message).toBe("Name, email, and password are required");
+    }
+  });
+
   it("should not assign role admin with incorrect adminInviteToken", async () => {
     const res = await request(app).post("/api/auth/signup").send({
       name: "Fake Admin",
@@ -274,7 +293,6 @@ describe("GET /api/auth/profile", () => {
   it("should return 404 if user is not found", async () => {
     const fakeId = new mongoose.Types.ObjectId();
     const fakeToken = generateToken(fakeId, "user");
-
     const res = await request(app)
       .get("/api/auth/profile")
       .set("Authorization", `Bearer ${fakeToken}`);
