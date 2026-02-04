@@ -9,6 +9,6 @@ connectDb();
 const Port = process.env.PORT || 5001;
 app.listen(Port, () => {
   console.log(
-    `Task manager server is successfully running at http://localhost:${Port}`
+    `Task manager server is successfully running at http://localhost:${Port}`,
   );
 });
