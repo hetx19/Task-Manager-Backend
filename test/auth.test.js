@@ -16,8 +16,10 @@ jest.mock("../config/cloudinary", () => ({
 
 let mongoServer;
 
-const generateToken = (userId) => {
-  return jwt.sign({ _id: userId }, process.env.JWT_SECRET, { expiresIn: "1h" });
+const generateToken = (userId, userRole) => {
+  return jwt.sign({ _id: userId, role: userRole }, process.env.JWT_SECRET, {
+    expiresIn: "1h",
+  });
 };
 
 beforeAll(async () => {
@@ -216,7 +218,7 @@ describe("GET /api/auth/profile", () => {
       role: "user",
     });
 
-    token = generateToken(user._id);
+    token = generateToken(user._id, user.role);
   });
 
   it("should return 200 and user profile with valid token", async () => {
@@ -250,9 +252,13 @@ describe("GET /api/auth/profile", () => {
   });
 
   it("should return 401 if token is expired", async () => {
-    const expiredToken = jwt.sign({ _id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1ms",
-    });
+    const expiredToken = jwt.sign(
+      { _id: user._id, userRole: user.role },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "1ms",
+      }
+    );
 
     // waiting so that token get expires
     await new Promise((r) => setTimeout(r, 10));
@@ -267,7 +273,7 @@ describe("GET /api/auth/profile", () => {
 
   it("should return 404 if user is not found", async () => {
     const fakeId = new mongoose.Types.ObjectId();
-    const fakeToken = generateToken(fakeId);
+    const fakeToken = generateToken(fakeId, "user");
 
     const res = await request(app)
       .get("/api/auth/profile")
@@ -326,7 +332,7 @@ describe("PUT /api/auth/profile", () => {
       profileImageUrl: "http://example.com/oldimage.jpg",
       role: "user",
     });
-    token = generateToken(user._id);
+    token = generateToken(user._id, user.role);
   });
 
   afterEach(() => {
@@ -407,7 +413,7 @@ describe("PUT /api/auth/profile", () => {
     const fakeId = new mongoose.Types.ObjectId();
 
     // Mock JWT verification
-    const token = generateToken(fakeId);
+    const token = generateToken(fakeId, "user");
 
     // Mock User.findById to return null
     jest.spyOn(User, "findById").mockResolvedValue(null);
@@ -510,9 +516,13 @@ describe("PUT /api/auth/profile", () => {
   });
 
   it("should return 401 if token is expired", async () => {
-    const expiredToken = jwt.sign({ _id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1ms",
-    });
+    const expiredToken = jwt.sign(
+      { _id: user._id, userRole: user.role },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "1ms",
+      }
+    );
 
     // waiting so that token gets expired
     await new Promise((r) => setTimeout(r, 10));
@@ -575,7 +585,7 @@ describe("DELETE /api/auth/profile", () => {
       profileImageUrl: "http://example.com/profile.jpg",
       role: "user",
     });
-    token = generateToken(user._id);
+    token = generateToken(user._id, user.role);
   });
 
   afterEach(() => {
@@ -615,7 +625,7 @@ describe("DELETE /api/auth/profile", () => {
 
   it("should return 404 if user not found", async () => {
     const fakeId = new mongoose.Types.ObjectId();
-    const fakeToken = generateToken(fakeId);
+    const fakeToken = generateToken(fakeId, "user");
 
     const res = await request(app)
       .delete("/api/auth/profile")
@@ -705,9 +715,13 @@ describe("DELETE /api/auth/profile", () => {
   });
 
   it("should return 401 if token is expired", async () => {
-    const expiredToken = jwt.sign({ _id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "1ms",
-    });
+    const expiredToken = jwt.sign(
+      { _id: user._id, userRole: user.role },
+      process.env.JWT_SECRET,
+      {
+        expiresIn: "1ms",
+      }
+    );
 
     // Wait for the token to expire
     await new Promise((resolve) => setTimeout(resolve, 10));
